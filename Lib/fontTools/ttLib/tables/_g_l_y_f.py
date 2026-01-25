@@ -699,17 +699,34 @@ class Glyph(object):
             del self.data
             self.numberOfContours = 0
             return
-        dummy, data = sstruct.unpack2(glyphHeaderFormat, self.data, self)
-        del self.data
-        # Some fonts (eg. Neirizi.ttf) have a 0 for numberOfContours in
-        # some glyphs; decompileCoordinates assumes that there's at least
-        # one, so short-circuit here.
-        if self.numberOfContours == 0:
-            return
-        if self.isComposite():
-            self.decompileComponents(data, glyfTable)
-        else:
-            self.decompileCoordinates(data)
+
+        try:
+            dummy, data = sstruct.unpack2(glyphHeaderFormat, self.data, self)
+            del self.data
+            # Some fonts (eg. Neirizi.ttf) have a 0 for numberOfContours in
+            # some glyphs; decompileCoordinates assumes that there's at least
+            # one, so short-circuit here.
+            if self.numberOfContours == 0:
+                return
+            if self.isComposite():
+                self.decompileComponents(data, glyfTable)
+            else:
+                self.decompileCoordinates(data)
+        except Exception as e:
+            # Decompilation failed due to corrupt/malformed glyph data
+            # Set glyph to empty state instead of crashing
+            log.warning(
+                "Failed to decompile glyph (corrupt font data): %s. "
+                "Glyph will render as empty.",
+                e
+            )
+            # Ensure we're in a valid empty state
+            self.numberOfContours = 0
+            # Set empty coordinates so getCoordinates() doesn't raise AttributeError
+            self.coordinates = GlyphCoordinates()
+            self.endPtsOfContours = []
+            self.flags = bytearray()
+            # Don't re-raise - glyph is now in valid (empty) state
 
     def compile(
         self, glyfTable, recalcBBoxes=True, *, boundsDone=None, optimizeSize=True
