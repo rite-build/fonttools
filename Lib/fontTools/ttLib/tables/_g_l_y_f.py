@@ -696,20 +696,29 @@ class Glyph(object):
             return
         if not self.data:
             # empty char
-            del self.data
             self.numberOfContours = 0
+            del self.data  # safe: numberOfContours=0 is valid final state
             return
-        dummy, data = sstruct.unpack2(glyphHeaderFormat, self.data, self)
-        del self.data
+
+        # Thread-safety: delete self.data LAST to ensure atomic state transition.
+        # Other threads check `hasattr(self, "data")` to determine if glyph is
+        # expanded. We must ensure all attributes are set before deleting data.
+        rawData = self.data
+        dummy, data = sstruct.unpack2(glyphHeaderFormat, rawData, self)
+
         # Some fonts (eg. Neirizi.ttf) have a 0 for numberOfContours in
         # some glyphs; decompileCoordinates assumes that there's at least
         # one, so short-circuit here.
         if self.numberOfContours == 0:
+            del self.data  # safe: numberOfContours=0 is valid final state
             return
         if self.isComposite():
             self.decompileComponents(data, glyfTable)
         else:
             self.decompileCoordinates(data)
+
+        # Delete data LAST - glyph now has all attributes set
+        del self.data
 
     def compile(
         self, glyfTable, recalcBBoxes=True, *, boundsDone=None, optimizeSize=True
